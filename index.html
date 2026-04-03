@@ -335,21 +335,60 @@
   }
 
   // ===== File loading =====
+  // Parse results helper
+  function handleParsedData(results) {
+    rawRecords = results.data.filter(r => r[COL_JULIAN] && (r[COL_PLANT_EN] || r[COL_PLANT_HE]));
+    computeAggregations();
+    populateRegionFilter();
+    buildRegionMap();
+    renderAll();
+  }
+
+  // Generic CSV loader: accepts a File object or a URL string
+  function loadCsv(source) {
+    const summaryEl = document.getElementById("summaryText");
+    if (!source) return;
+
+    if (source instanceof File) {
+      Papa.parse(source, {
+        header: true,
+        dynamicTyping: true,
+        complete: function (results) {
+          handleParsedData(results);
+        }
+      });
+      return;
+    }
+
+    // treat source as URL
+    fetch(source)
+      .then(resp => {
+        if (!resp.ok) throw new Error('Network response was not ok (' + resp.status + ')');
+        return resp.text();
+      })
+      .then(text => {
+        const results = Papa.parse(text, { header: true, dynamicTyping: true });
+        handleParsedData(results);
+      })
+      .catch(err => {
+        console.warn("Failed to load CSV:", err);
+        summaryEl.textContent = "Could not load '" + source + "': " + (err.message || err);
+        // Common cause when opening the HTML via file:// is a CORS / fetch block; hint the user.
+        summaryEl.textContent += " If you're opening the page locally (file://), the browser may block fetch requests. Run a local web server (from the folder containing the HTML/CSV), e.g.:";
+        summaryEl.textContent += " `python -m http.server 8000`, or use the file selector below to choose the CSV.";
+      });
+  }
+
+  // wire up file input
   document.getElementById("fileInput").addEventListener("change", function (e) {
     const file = e.target.files[0];
     if (!file) return;
+    loadCsv(file);
+  });
 
-    Papa.parse(file, {
-      header: true,
-      dynamicTyping: true,
-      complete: function (results) {
-        rawRecords = results.data.filter(r => r[COL_JULIAN] && (r[COL_PLANT_EN] || r[COL_PLANT_HE]));
-        computeAggregations();
-        populateRegionFilter();
-        buildRegionMap();
-        renderAll();
-      }
-    });
+  // Try to load default CSV on page load; will fail gracefully if blocked by CORS/local file policy
+  window.addEventListener("load", () => {
+    loadCsv("flowering_israel.csv");
   });
 
   // ===== Aggregations =====
