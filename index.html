@@ -164,6 +164,38 @@
     .legend-color.green { background: #4caf50; }
     .legend-color.orange { background: #ff9800; }
     .legend-color.red { background: #d32f2f; }
+    /* extra legend swatches for enhanced features */
+    .legend-color.secondary { background: rgba(0,0,0,0.12); border: 1px solid rgba(0,0,0,0.08); }
+    .legend-color.winter { background: repeating-linear-gradient(45deg, #66bb6a 0 6px, #4caf50 6px 12px); border-radius: 3px; }
+    .legend-badge {
+      display: inline-block;
+      background: #9c27b0;
+      color: #fff;
+      font-size: 0.65rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .legend-month-marker {
+      width: 2px;
+      height: 14px;
+      background: #ddd;
+      border-radius: 1px;
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+  /* language visibility and RTL tweaks (scoped to legend only) */
+  .legend .lang-en { display: inline; }
+  .legend .lang-he { display: none; }
+  body.lang-he .legend .lang-en { display: none; }
+  body.lang-he .legend .lang-he { display: inline; }
+  /* Legend layout for Hebrew (RTL) */
+  body.lang-he .legend { direction: rtl; text-align: right; }
+  body.lang-he .multi-period-badge, body.lang-he .legend-badge { margin-right: 6px; margin-left: 0; }
+  /* ensure month inline labels remain LTR for readability when mixed */
+  body.lang-he .month-label-inline { direction: ltr; }
 
     /* Multi-period / winter styling */
     .bar.secondary {
@@ -289,16 +321,15 @@
   <div class="panel">
     <h2>Expected flowering periods</h2>
     <div class="timeline-container" id="timelineContainer"></div>
-    <div class="legend">
-      <div class="legend-item">
-        <span class="legend-color green"></span> Expected flowering period
-      </div>
-      <div class="legend-item">
-        <span class="legend-color orange"></span> Currently in bloom
-      </div>
-      <div class="legend-item">
-        <span class="legend-color red"></span> Today (Julian day)
-      </div>
+    <div class="legend" aria-hidden="false">
+      <div class="legend-item"><span class="legend-color green" aria-hidden="true"></span> <span class="lang-en">Primary (expected) flowering period</span><span class="lang-he">תקופת פריחה צפויה (עיקרית)</span></div>
+      <div class="legend-item"><span class="legend-color secondary" aria-hidden="true"></span> <span class="lang-en">Secondary / additional flowering period</span><span class="lang-he">תקופה משנית / נוספת</span></div>
+      <div class="legend-item"><span class="legend-color winter" aria-hidden="true"></span> <span class="lang-en">Winter period (spans year boundary)</span><span class="lang-he">תקופת חורף (חוצה את סוף/תחילת השנה)</span></div>
+      <div class="legend-item"><span class="legend-color orange" aria-hidden="true"></span> <span class="lang-en">Currently in bloom (based on today's date)</span><span class="lang-he">כעת בפריחה (בהתאם לתאריך של היום)</span></div>
+      <div class="legend-item"><span class="legend-color red" aria-hidden="true"></span> <span class="lang-en">Today (Julian day marker)</span><span class="lang-he">היום (יום יוליאני)</span></div>
+      <div class="legend-item"><span class="legend-badge" aria-hidden="true">2×</span> <span class="lang-en">Multi-period badge: number of distinct blooming periods</span><span class="lang-he">סמלית ריבוי תקופות: מספר תקופות פריחה</span></div>
+      <div class="legend-item"><span class="legend-month-marker" aria-hidden="true"></span> <span class="lang-en">Month markers along the timeline (toggle date format above)</span><span class="lang-he">סימוני חודשים לאורך ציר הזמן (שנה תצוגת תאריכים למעלה)</span></div>
+      <div class="legend-item" style="flex-basis:100%; color:#666; margin-top:4px;"><span class="lang-en">Date display mode controlled by "Date format" — Month/day, Julian day, or both.</span><span class="lang-he">מצב תצוגת התאריכים ניתן לשינוי ב"פורמט תאריך" — חודש/יום, יום יוליאני, או שניהם.</span></div>
     </div>
   </div>
 </div>
@@ -453,6 +484,22 @@
   
   const languageSelect = document.getElementById("languageSelect");
   updateTodayDisplay();
+
+  // toggle legend language and RTL class on body
+  function updateLegendLanguage() {
+    try {
+      const lang = (languageSelect && languageSelect.value) ? languageSelect.value : 'en';
+      if (lang === 'he') {
+        document.body.classList.add('lang-he');
+        console.log('UI language set to Hebrew (RTL)');
+      } else {
+        document.body.classList.remove('lang-he');
+        console.log('UI language set to English (LTR)');
+      }
+    } catch (e) {
+      console.error('updateLegendLanguage failed', e);
+    }
+  }
 
   // Helper: choose display value based on language, with fallback
   function pickBilingual(record, colEn, colHe) {
@@ -613,11 +660,15 @@
       populateRegionFilter();
       buildRegionMap();
       updateTodayDisplay();
+      updateLegendLanguage();
       renderAll();
     };
 
     const dateDisplay = document.getElementById('dateDisplayMode');
     if (dateDisplay) dateDisplay.onchange = () => { updateTodayDisplay(); renderAll(); };
+
+    // ensure legend language matches initial selection
+    updateLegendLanguage();
   }
 
   function buildRegionMap() {
