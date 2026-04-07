@@ -373,7 +373,10 @@
     if (!julian || typeof julian !== 'number') return '';
     const { month, day } = julianToMonthDay(julian);
     const months = (format === 'short') ? (lang === 'he' ? MONTHS_HE : MONTHS_EN) : (lang === 'he' ? MONTHS_FULL_HE : MONTHS_FULL_EN);
-    if (lang === 'he') return `${day} ${months[month]}`;
+  // When rendering Hebrew mixed with numbers, prepend a Right-to-Left Mark
+  // so the browser orders the day and month correctly in tooltips and inline text.
+  const RLM = '\u200F';
+  if (lang === 'he') return RLM + `${day} ${months[month]}`;
     return `${months[month]} ${day}`;
   }
 
@@ -968,7 +971,12 @@
     function formatPeriodTooltip(period, lang) {
       const start = period.minDay;
       const end = period.maxDay > 365 ? (period.maxDay - 365) : period.maxDay;
-      if (lang === 'he') return `${formatJulianAsDate(start,'he','short')} — ${formatJulianAsDate(end,'he','short')}`;
+      if (lang === 'he') {
+        // Ensure the separator and numbers render RTL in native tooltips by
+        // adding RLM marks around the dash.
+        const RLM = '\u200F';
+        return RLM + `${formatJulianAsDate(start,'he','short')} ${RLM}—${RLM} ${formatJulianAsDate(end,'he','short')}`;
+      }
       return `${formatJulianAsDate(start,'en','short')} — ${formatJulianAsDate(end,'en','short')}`;
     }
 
