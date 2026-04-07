@@ -482,6 +482,15 @@
         <option>20</option>
       </select>
     </div>
+    <div style="display:flex; flex-direction:column;">
+      <label for="recommendPlantSort"><span class="lang-en">Plant sort:</span><span class="lang-he">מיון צמחים:</span></label>
+      <select id="recommendPlantSort">
+  <option value="contribution" data-en="By contribution to score" data-he="מיון לפי תרומה לציון" selected>By contribution to score</option>
+  <option value="probability" data-en="By bloom probability (in range)" data-he="מיון לפי סיכוי פריחה (בתחום)">By bloom probability (in range)</option>
+  <option value="name" data-en="By plant name (language-aware)" data-he="מיון לפי שם הצמח (בהתאם לשפה)">By plant name (language-aware)</option>
+  <option value="original" data-en="Original / detection order" data-he="לפי סדר מקור/זיהוי">Original / detection order</option>
+      </select>
+    </div>
     <div>
       <button id="getRecommendations" class="primary-button"><span class="lang-en">Get recommendations</span><span class="lang-he">הצג המלצות</span></button>
     </div>
@@ -629,6 +638,19 @@
     } catch (e) {
       console.error('updateLegendLanguage failed', e);
     }
+  }
+
+  // Update the visible option labels for the recommendPlantSort control
+  function updateRecommendPlantSortLabels() {
+    const sel = document.getElementById('recommendPlantSort');
+    if (!sel) return;
+    const lang = (languageSelect && languageSelect.value) ? languageSelect.value : 'en';
+    Array.from(sel.options).forEach(opt => {
+      const en = opt.getAttribute('data-en');
+      const he = opt.getAttribute('data-he');
+      if (lang === 'he' && he) opt.textContent = he;
+      else if (en) opt.textContent = en;
+    });
   }
 
   // Small i18n map for UI strings used in the recommendations area
@@ -813,8 +835,14 @@
     const dateDisplay = document.getElementById('dateDisplayMode');
     if (dateDisplay) dateDisplay.onchange = () => { updateTodayDisplay(); renderAll(); };
 
+  // if the plant sort control changes, re-render cached recommendations
+  const plantSortEl = document.getElementById('recommendPlantSort');
+  if (plantSortEl) plantSortEl.onchange = () => { if (lastRecommendations) renderRecommendations(lastRecommendations); };
+
     // ensure legend language matches initial selection
     updateLegendLanguage();
+  // ensure recommendPlantSort option labels reflect current language
+  if (typeof updateRecommendPlantSortLabels === 'function') updateRecommendPlantSortLabels();
   }
 
   function buildRegionMap() {
@@ -1348,10 +1376,13 @@
         if (!anyOverlap) return;
         const prob = calculateBloomProbabilityInRange(p.observations || [], targetStart, targetEnd);
         const isRare = periods.reduce((min, x) => Math.min(min, x.count || 999), 999) < 3;
-        probabilityScore += prob;
-        rarityScore += isRare ? 1 : 0;
-        diversityScore += 1;
-        bloomingSpecies.push({ plantEn: p.plantEn, plantHe: p.plantHe, probability: prob, isRare });
+  probabilityScore += prob;
+  rarityScore += isRare ? 1 : 0;
+  diversityScore += 1;
+  // per-plant contribution heuristic: probability weighted plus rarity bonus
+  const rawContribution = (prob * 50) + (isRare ? 12 : 0);
+  const contribution = Math.round(rawContribution);
+  bloomingSpecies.push({ plantEn: p.plantEn, plantHe: p.plantHe, probability: prob, isRare, contribution, rawContribution });
       });
       const diversityBonus = Math.log(diversityScore + 1) * 15;
       const totalScore = Math.round((probabilityScore * 50) + (rarityScore * 12) + diversityBonus);
@@ -1374,7 +1405,22 @@
       container.innerHTML = '';
   if (!recommendations || recommendations.length === 0) { container.innerHTML = '<div class="no-recommendations">' + (STR.no_recs[languageSelect.value] || STR.no_recs.en) + '</div>'; return; }
       const maxShow = parseInt(document.getElementById('recommendCount').value || '10',10);
+      const plantSort = (document.getElementById('recommendPlantSort') && document.getElementById('recommendPlantSort').value) || 'contribution';
       recommendations.slice(0, maxShow).forEach((rec, idx) => {
+        // sort blooming species according to user preference before rendering
+        if (Array.isArray(rec.bloomingSpecies)) {
+          if (plantSort === 'contribution') {
+            rec.bloomingSpecies.sort((a,b) => (b.contribution || 0) - (a.contribution || 0));
+          } else if (plantSort === 'probability') {
+            rec.bloomingSpecies.sort((a,b) => (b.probability || 0) - (a.probability || 0));
+          } else if (plantSort === 'name') {
+            rec.bloomingSpecies.sort((a,b) => {
+              const an = pickBilingualFromObj(a, 'plantEn', 'plantHe');
+              const bn = pickBilingualFromObj(b, 'plantEn', 'plantHe');
+              return an.localeCompare(bn, 'he');
+            });
+          } // 'original' will preserve order
+        }
         const card = document.createElement('div');
         card.className = 'recommendation-card rank-' + Math.min(3, idx+1);
         const header = document.createElement('div'); header.className = 'recommendation-header';
@@ -1448,6 +1494,7 @@
       const dateStr = today.toISOString().split('T')[0];
       const sd = document.getElementById('recommendStartDate'); if (sd) sd.value = dateStr;
       const ed = document.getElementById('recommendEndDate'); if (ed) ed.value = dateStr;
+  if (typeof updateRecommendPlantSortLabels === 'function') updateRecommendPlantSortLabels();
     });
 </script>
 </body>
