@@ -1148,28 +1148,29 @@
       labelsStrip.style.display = '';
       linesOverlay.style.display = '';
 
-      const barRect = firstBar.getBoundingClientRect();
-      const containerRect = container.getBoundingClientRect();
-      const left = barRect.left - containerRect.left;
-      const width = barRect.width;
+      // Use offset measurements (relative to the container) instead of
+      // getBoundingClientRect() so the overlay position/height remain stable
+      // when direction/layout changes (e.g. switching to RTL / Hebrew).
+      const left = firstBar.offsetLeft;
+      const width = firstBar.offsetWidth;
 
-      // position the lines overlay to cover the bars
+      // position the lines overlay to cover the bars horizontally
       linesOverlay.style.left = left + 'px';
       linesOverlay.style.width = width + 'px';
-      // find last bar to determine full vertical span
+
+      // find last bar to determine full vertical span using offsetTop/offsetHeight
       const allBars = container.querySelectorAll('.bar-wrapper');
       const lastBar = allBars[allBars.length - 1];
       if (lastBar) {
-        const lastRect = lastBar.getBoundingClientRect();
-        const topOffset = barRect.top - containerRect.top;
-        const bottomOffset = lastRect.bottom - containerRect.top;
+        const topOffset = firstBar.offsetTop;
+        const bottomOffset = lastBar.offsetTop + lastBar.offsetHeight;
         const height = Math.max(0, bottomOffset - topOffset);
         linesOverlay.style.top = topOffset + 'px';
         linesOverlay.style.height = height + 'px';
       } else {
         // fallback: cover single bar height
-        linesOverlay.style.top = (barRect.top - containerRect.top) + 'px';
-        linesOverlay.style.height = barRect.height + 'px';
+        linesOverlay.style.top = firstBar.offsetTop + 'px';
+        linesOverlay.style.height = firstBar.offsetHeight + 'px';
       }
       // labelsStrip spans full container width, place labels relative to the bar area
       labelsStrip.style.left = '0px';
