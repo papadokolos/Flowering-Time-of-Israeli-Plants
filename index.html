@@ -82,9 +82,11 @@
 
     /* Timeline list */
     .timeline-container {
-      max-height: 420px;
-      overflow-y: auto;
-      margin-top: 0.5rem;
+  max-height: 420px;
+  overflow-y: auto;
+  margin-top: 0.5rem;
+  position: relative; /* allow absolute-positioned month overlay */
+  padding-top: 20px;   /* reserve space for the month overlay at the top */
     }
     .timeline-row {
       display: flex;
@@ -196,6 +198,50 @@
   body.lang-he .multi-period-badge, body.lang-he .legend-badge { margin-right: 6px; margin-left: 0; }
   /* ensure month inline labels remain LTR for readability when mixed */
   body.lang-he .month-label-inline { direction: ltr; }
+
+    /* Global month overlay (drawn from the top, across all timeline rows) */
+    /* sticky label strip that remains visible while scrolling */
+    .month-labels {
+      position: sticky;
+      top: 0;
+      height: 20px;
+      pointer-events: none;
+      z-index: 300; /* above lines and bars */
+      display: block;
+    }
+    /* absolute lines that overlay the bar area and scroll with content */
+    .month-lines {
+      position: absolute;
+      pointer-events: none;
+      z-index: 200; /* above bars but below labels */
+      overflow: visible;
+    }
+  /* hidden by default; shown when hovering the bars */
+  .month-lines { opacity: 0; transition: opacity 0.18s ease; }
+  .timeline-container.show-month-lines .month-lines { opacity: 1; }
+    .month-separator {
+      position: absolute;
+      top: 0;
+      bottom: 0; /* span full lines height */
+      width: 2px;
+      background: rgba(0,0,0,0.18);
+      border-radius: 1px;
+      transform: translateX(-1px);
+      pointer-events: none;
+    }
+    .month-label-inline {
+      position: absolute;
+      top: 2px; /* small offset from top inside sticky label strip */
+      transform: translateX(-50%);
+      font-size: 0.7rem;
+      color: #222;
+      white-space: nowrap;
+      pointer-events: none;
+      background: rgba(255,255,255,0.9);
+      padding: 0 4px;
+      border-radius: 3px;
+      box-shadow: 0 1px 0 rgba(0,0,0,0.04);
+    }
 
     /* Multi-period / winter styling */
     .bar.secondary {
@@ -805,12 +851,28 @@
       todayLine.style.left = (todayJulian / 365) * 100 + "%";
       barWrapper.appendChild(todayLine);
 
-      // add month markers to first visible row only
-      if (container.children.length === 0) addMonthMarkersToFirstRow(barWrapper);
 
       row.appendChild(nameEl);
       row.appendChild(regionEl);
       row.appendChild(barWrapper);
+
+      // show month-lines overlay while pointer is over any bar area
+      barWrapper.addEventListener('pointerenter', () => {
+        // cancel any pending hide timer
+        if (container._monthLinesHideTimer) {
+          clearTimeout(container._monthLinesHideTimer);
+          container._monthLinesHideTimer = null;
+        }
+        container.classList.add('show-month-lines');
+      });
+      barWrapper.addEventListener('pointerleave', () => {
+        // delay hiding to avoid flicker when moving between bars
+        if (container._monthLinesHideTimer) clearTimeout(container._monthLinesHideTimer);
+        container._monthLinesHideTimer = setTimeout(() => {
+          container.classList.remove('show-month-lines');
+          container._monthLinesHideTimer = null;
+        }, 1000);
+      });
 
       // On click: show per-plant probability curve
       row.addEventListener("click", () => {
@@ -819,6 +881,10 @@
 
       container.appendChild(row);
     });
+
+    // after rows are rendered, size and position the global overlay to match
+    // the bar area (based on the first row's .bar-wrapper)
+    ensureGlobalMonthOverlay();
   }
 
   // ===== Region phenology curve =====
@@ -1042,20 +1108,84 @@
       return boundaries;
     }
 
-    function addMonthMarkersToFirstRow(barWrapper) {
+    // Create or update a single global month overlay drawn at the top of the
+    // timeline container so month markers remain aligned across all rows.
+    function ensureGlobalMonthOverlay() {
+      const container = document.getElementById('timelineContainer');
+      if (!container) return;
+
+      // ensure label strip exists (sticky)
+      let labelsStrip = container.querySelector('.month-labels');
+      if (!labelsStrip) {
+        labelsStrip = document.createElement('div');
+        labelsStrip.className = 'month-labels';
+        container.insertBefore(labelsStrip, container.firstChild);
+      }
+
+      // ensure lines overlay exists (absolute positioned)
+      let linesOverlay = container.querySelector('.month-lines');
+      if (!linesOverlay) {
+        linesOverlay = document.createElement('div');
+        linesOverlay.className = 'month-lines';
+        container.insertBefore(linesOverlay, labelsStrip.nextSibling);
+      }
+
+      // determine the bar area (use first .bar-wrapper)
+      const firstBar = container.querySelector('.bar-wrapper');
+      if (!firstBar) { labelsStrip.style.display = 'none'; linesOverlay.style.display = 'none'; return; }
+      labelsStrip.style.display = '';
+      linesOverlay.style.display = '';
+
+      const barRect = firstBar.getBoundingClientRect();
+      const containerRect = container.getBoundingClientRect();
+      const left = barRect.left - containerRect.left;
+      const width = barRect.width;
+
+      // position the lines overlay to cover the bars
+      linesOverlay.style.left = left + 'px';
+      linesOverlay.style.width = width + 'px';
+      // find last bar to determine full vertical span
+      const allBars = container.querySelectorAll('.bar-wrapper');
+      const lastBar = allBars[allBars.length - 1];
+      if (lastBar) {
+        const lastRect = lastBar.getBoundingClientRect();
+        const topOffset = barRect.top - containerRect.top;
+        const bottomOffset = lastRect.bottom - containerRect.top;
+        const height = Math.max(0, bottomOffset - topOffset);
+        linesOverlay.style.top = topOffset + 'px';
+        linesOverlay.style.height = height + 'px';
+      } else {
+        // fallback: cover single bar height
+        linesOverlay.style.top = (barRect.top - containerRect.top) + 'px';
+        linesOverlay.style.height = barRect.height + 'px';
+      }
+      // labelsStrip spans full container width, place labels relative to the bar area
+      labelsStrip.style.left = '0px';
+      labelsStrip.style.right = '0px';
+
+      labelsStrip.innerHTML = '';
+      linesOverlay.innerHTML = '';
+
       const monthBoundaries = getMonthBoundaries();
       const lang = languageSelect.value;
       monthBoundaries.forEach((b, idx) => {
+        const posPx = (b / 365) * width;
+
         const marker = document.createElement('div');
         marker.className = 'month-separator';
-        marker.style.left = (b / 365) * 100 + '%';
+        marker.style.left = posPx + 'px';
+        linesOverlay.appendChild(marker);
+
         const label = document.createElement('div');
         label.className = 'month-label-inline';
-        label.style.left = (b / 365) * 100 + '%';
+        // place label relative to container so it aligns with line position
+        label.style.left = (left + posPx) + 'px';
         label.textContent = lang === 'he' ? MONTHS_HE[idx] : MONTHS_EN[idx];
-        barWrapper.appendChild(marker);
-        barWrapper.appendChild(label);
+        labelsStrip.appendChild(label);
       });
+
+      // ensure lines overlay is after rows so it layers above them
+      container.appendChild(linesOverlay);
     }
 
     // ===== Recommendations engine (basic) =====
