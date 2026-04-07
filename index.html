@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Flowering Time of Israeli Plants</title>
   <style>
     body {
@@ -123,6 +124,8 @@
       background: #f0f0f0;
       border-radius: 7px;
       overflow: hidden;
+  min-height: 12px;
+  display: block;
     }
     .bar {
       position: absolute;
@@ -131,6 +134,7 @@
       background: #4caf50;
       border-radius: 7px;
       opacity: 0.8;
+  z-index: 220; /* ensure bars appear above month overlay lines */
     }
     .bar.current {
       background: #ff9800;
@@ -143,6 +147,7 @@
       width: 2px;
       background: #d32f2f;
       pointer-events: none;
+  z-index: 400; /* ensure the today marker is drawn above bars (including .bar.current) */
     }
 
     .legend {
@@ -323,6 +328,82 @@
     .species-tag.rare { background: #fff3e0; color: #ef6c00; border: 1px solid rgba(0,0,0,0.04); font-weight: 700; }
     .species-tag-more { background: transparent; color: #666; padding: 4px 6px; font-size: 0.9rem; }
     .no-recommendations { color: #666; padding: 0.5rem; }
+    /* Responsive tweaks for small smartphone screens
+       - Stack timeline row elements so the bar can use full width
+       - Reduce/hide side labels at very small widths to maximize bar area
+       - Slightly increase bar height for better touch-target on phones */
+    @media (max-width: 600px) {
+      /* Reduce base density on narrow viewports so the UI doesn't feel oversized */
+      body {
+        font-size: 14px; /* slightly smaller base font on phones */
+        padding: 0.9rem;
+      }
+      .controls { flex-direction: column; gap: 0.5rem; align-items: stretch; }
+      .controls select, .controls input[type="search"], .controls input[type="file"] { font-size: 0.92rem; }
+      .panel { padding: 0.6rem; }
+      .timeline-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.35rem;
+      }
+      .plant-name {
+        width: 100%;
+        flex-shrink: 0;
+        font-size: 0.95rem;
+        white-space: normal;
+        overflow: visible;
+      }
+      .region-label {
+        width: 100%;
+        flex-shrink: 0;
+        font-size: 0.85rem;
+        color: #555;
+        white-space: normal;
+      }
+      .bar-wrapper {
+        height: 18px;
+      }
+      .bar { height: 100%; border-radius: 9px; }
+      .month-label-inline { font-size: 0.65rem; top: 0px; }
+    }
+    /* Very small narrow devices: hide the region label to maximize bar width */
+    @media (max-width: 420px) {
+      body { font-size: 13px; padding: 0.7rem; }
+      .region-label { display: none; }
+      .plant-name { font-size: 1rem; }
+      .bar-wrapper { height: 20px; }
+      .controls select, .controls input[type="search"], .controls input[type="file"] { font-size: 0.88rem; }
+    }
+    /* Reorder panels on small screens: show timeline before regions */
+    @media (max-width: 720px) {
+  /* stack the panels using flex-column so `order` works */
+  .layout { display: flex; flex-direction: column; }
+  .layout > .panel { margin-bottom: 0.75rem; width: 100%; }
+  /* timeline panel should appear first */
+  .timeline-panel { order: -1; }
+  /* show collapse toggle only on small screens */
+  .region-collapse-toggle { display: inline-block !important; margin-left: 0.6rem; font-size: 0.8rem; }
+  /* Ensure timeline rows and bar areas fill available width on narrow screens */
+  .timeline-container, .timeline-row, .bar-wrapper { width: 100% !important; box-sizing: border-box; }
+  .timeline-row { display: flex !important; flex-direction: column; align-items: stretch; }
+  .timeline-container { display: block !important; }
+  .bar-wrapper { min-height: 16px !important; height: auto !important; display: block !important; }
+  .bar { min-width: 6px; z-index: 250; }
+  /* Hebrew small-screen: align plant names RTL and right-justify for readability */
+  body.lang-he .plant-name {
+    direction: rtl;
+    text-align: right;
+    unicode-bidi: embed; /* keep punctuation grouping consistent */
+  }
+  /* On narrow screens, avoid centering month labels with translateX(-50%)
+    because the first label can be clipped; use simple left positioning. */
+  .month-label-inline { transform: none !important; }
+  /* Avoid horizontal scroll inside the timeline on narrow screens */
+  .timeline-container { overflow-x: hidden !important; }
+  .month-lines, .month-labels { max-width: 100% !important; left: 0 !important; }
+    }
+  /* Hide the collapse toggle on wide screens (handled via media query) */
+
   /* Expand toggle hidden by default; reveal on hover or keyboard focus within card */
   .expand-toggle {
     color: #1976d2;
@@ -428,10 +509,10 @@
   Load a CSV file to begin.
 </section>
 
-<div class="layout">
+  <div class="layout">
   <!-- Left: region map + charts -->
-  <div class="panel">
-    <h2>Regions overview & phenology</h2>
+  <div class="panel region-panel">
+    <h2>Regions overview & phenology <button type="button" class="region-collapse-toggle" aria-expanded="true" aria-controls="regionMap" title="Collapse/expand on small screens">Hide</button></h2>
     <div id="regionMap" class="region-map"></div>
     <p style="font-size:0.8rem; margin-top:0.4rem;">
       Click a region tile or use the dropdown to focus its phenology curve.
@@ -445,7 +526,7 @@
   </div>
 
   <!-- Right: timeline list -->
-  <div class="panel">
+  <div class="panel timeline-panel">
     <h2>Expected flowering periods</h2>
     <div class="timeline-container" id="timelineContainer"></div>
     <div class="legend" aria-hidden="false">
@@ -1271,9 +1352,13 @@
       const left = firstBar.offsetLeft;
       const width = firstBar.offsetWidth;
 
-      // position the lines overlay to cover the bars horizontally
-      linesOverlay.style.left = left + 'px';
-      linesOverlay.style.width = width + 'px';
+  // position the lines overlay to cover the bars horizontally
+  // clamp to container width to avoid creating horizontal overflow
+  const containerWidth = container.clientWidth || container.offsetWidth || 0;
+  const clampedLeft = Math.max(0, Math.min(left, containerWidth));
+  const clampedWidth = Math.max(0, Math.min(width, containerWidth - clampedLeft));
+  linesOverlay.style.left = clampedLeft + 'px';
+  linesOverlay.style.width = clampedWidth + 'px';
 
       // find last bar to determine full vertical span using offsetTop/offsetHeight
       const allBars = container.querySelectorAll('.bar-wrapper');
@@ -1299,17 +1384,22 @@
       const monthBoundaries = getMonthBoundaries();
       const lang = languageSelect.value;
       monthBoundaries.forEach((b, idx) => {
-        const posPx = (b / 365) * width;
+  const posPx = (b / 365) * width;
 
         const marker = document.createElement('div');
         marker.className = 'month-separator';
-        marker.style.left = posPx + 'px';
+  // ensure marker position is inside the overlay
+  const markerPos = Math.max(0, Math.min(posPx, clampedWidth));
+  marker.style.left = markerPos + 'px';
         linesOverlay.appendChild(marker);
 
         const label = document.createElement('div');
         label.className = 'month-label-inline';
         // place label relative to container so it aligns with line position
-        label.style.left = (left + posPx) + 'px';
+  // place label relative to container so it aligns with line position
+  const labelLeft = clampedLeft + markerPos;
+  // clamp label into container bounds
+  label.style.left = Math.max(4, Math.min(labelLeft, clampedLeft + clampedWidth - 4)) + 'px';
         label.textContent = lang === 'he' ? MONTHS_HE[idx] : MONTHS_EN[idx];
         labelsStrip.appendChild(label);
       });
@@ -1496,6 +1586,41 @@
       const ed = document.getElementById('recommendEndDate'); if (ed) ed.value = dateStr;
   if (typeof updateRecommendPlantSortLabels === 'function') updateRecommendPlantSortLabels();
     });
+
+    // ===== Region panel collapse (small screens) =====
+    (function(){
+      const toggle = document.querySelector('.region-collapse-toggle');
+      const regionPanel = document.querySelector('.region-panel');
+      if (!toggle || !regionPanel) return;
+      const contentNodes = [];
+      Array.from(regionPanel.children).forEach(ch => { if (!ch.matches('h2')) contentNodes.push(ch); });
+
+      function setCollapsed(collapsed){
+        contentNodes.forEach(n=> n.style.display = collapsed ? 'none' : '');
+        toggle.setAttribute('aria-expanded', String(!collapsed));
+        toggle.textContent = collapsed ? 'Show' : 'Hide';
+      }
+
+      // initialize based on viewport width: only enable collapse behavior on narrow viewports
+      const isNarrow = window.matchMedia('(max-width: 720px)').matches;
+      setCollapsed(false);
+
+      function updateForResize(){
+        const narrow = window.matchMedia('(max-width: 720px)').matches;
+        // show toggle only on narrow
+        toggle.style.display = narrow ? 'inline-block' : 'none';
+        // if switching to wide, ensure panel is expanded
+        if (!narrow) setCollapsed(false);
+      }
+      updateForResize();
+      window.addEventListener('resize', updateForResize);
+
+      toggle.addEventListener('click', (e)=>{
+        const isExpanded = toggle.getAttribute('aria-expanded') === 'true';
+        setCollapsed(isExpanded);
+        setTimeout(() => { try { ensureGlobalMonthOverlay(); } catch(e){} }, 50);
+      });
+    })();
 </script>
 </body>
 </html>
