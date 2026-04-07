@@ -188,11 +188,12 @@
       vertical-align: middle;
       margin-right: 6px;
     }
-  /* language visibility and RTL tweaks (scoped to legend only) */
-  .legend .lang-en { display: inline; }
-  .legend .lang-he { display: none; }
-  body.lang-he .legend .lang-en { display: none; }
-  body.lang-he .legend .lang-he { display: inline; }
+  /* language visibility and RTL tweaks (global) */
+  /* don't accidentally hide the <body> when it gets the language class */
+  .lang-en:not(body) { display: inline; }
+  .lang-he:not(body) { display: none; }
+  body.lang-he .lang-en { display: none; }
+  body.lang-he .lang-he { display: inline; }
   /* Legend layout for Hebrew (RTL) */
   body.lang-he .legend { direction: rtl; text-align: right; }
   body.lang-he .multi-period-badge, body.lang-he .legend-badge { margin-right: 6px; margin-left: 0; }
@@ -286,6 +287,50 @@
       font-size: 0.75rem;
       color: #666;
     }
+    /* Recommendations panel styling */
+    .recommendation-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: 0.65rem;
+      border-radius: 8px;
+      border: 1px solid #e6e6e6;
+      background: linear-gradient(180deg, #ffffff, #fbfbfc);
+      box-shadow: 0 1px 2px rgba(16,24,40,0.03);
+      margin-bottom: 0.6rem;
+    }
+    @media (min-width: 720px) {
+      .recommendation-card { flex-direction: row; align-items: flex-start; justify-content: space-between; }
+    }
+    .recommendation-header { display: flex; gap: 0.6rem; align-items: center; flex: 1; }
+    .recommendation-rank {
+      width: 40px; height: 40px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 1rem; color: #fff; flex-shrink: 0;
+    }
+    .recommendation-rank.rank-1 { background: linear-gradient(180deg,#ffd54f,#ffb300); color:#222; }
+    .recommendation-rank.rank-2 { background: #90caf9; color:#022; }
+    .recommendation-rank.rank-3 { background: #c5e1a5; color:#133; }
+    .recommendation-location h3 { margin: 0; font-size: 1rem; }
+    .recommendation-site { font-size: 0.85rem; color: #666; margin-top: 0.12rem; }
+    .recommendation-score-badge { background: #f3f4f6; border-radius: 10px; padding: 6px 10px; font-weight: 800; color: #222; margin-left: 8px; align-self: flex-start; }
+    .recommendation-stats { display: flex; gap: 0.6rem; align-items: center; margin-top: 0.25rem; }
+    .stat-item { display: inline-flex; align-items: center; gap: 0.35rem; color: #444; font-size: 0.9rem; }
+    .stat-icon { font-size: 1.1rem; }
+    .species-preview { flex-basis: 100%; }
+    .species-preview h4 { margin: 0 0 0.25rem 0; font-size: 0.9rem; color: #333; }
+    .species-tags { display:flex; flex-wrap: wrap; gap: 0.35rem; }
+    .species-tag { background: #f1f8e9; color: #2e7d32; padding: 4px 8px; border-radius: 999px; font-size: 0.82rem; }
+    .species-tag.rare { background: #fff3e0; color: #ef6c00; border: 1px solid rgba(0,0,0,0.04); font-weight: 700; }
+    .species-tag-more { background: transparent; color: #666; padding: 4px 6px; font-size: 0.9rem; }
+    .no-recommendations { color: #666; padding: 0.5rem; }
+
+    /* Tidy up the primary button used by the recommendations panel */
+    .primary-button { background: #1976d2; color: #fff; border: none; padding: 0.5rem 0.8rem; border-radius: 6px; cursor: pointer; font-weight: 700; }
+    .primary-button:hover { filter: brightness(0.98); }
+
+    /* RTL / Hebrew tweaks for recommendations */
+    body.lang-he .recommendation-card { direction: rtl; text-align: right; }
+    body.lang-he .recommendation-score-badge { margin-left: 0; margin-right: 8px; }
   </style>
 </head>
 <body>
@@ -394,18 +439,18 @@
 
 <!-- Recommendations panel (Feature 3) -->
 <section class="panel" style="margin-top:1rem;">
-  <h2>🌸 Travel Recommendations</h2>
+  <h2>🌸 <span class="lang-en">Travel Recommendations</span><span class="lang-he">המלצות לטיולים</span></h2>
   <div style="display:flex; gap:0.6rem; align-items:flex-end; flex-wrap:wrap;">
     <div style="display:flex; flex-direction:column;">
-      <label for="recommendStartDate">Start date:</label>
+      <label for="recommendStartDate"><span class="lang-en">Start date:</span><span class="lang-he">תאריך התחלה:</span></label>
       <input type="date" id="recommendStartDate" />
     </div>
     <div style="display:flex; flex-direction:column;">
-      <label for="recommendEndDate">End date:</label>
+      <label for="recommendEndDate"><span class="lang-en">End date:</span><span class="lang-he">תאריך סיום:</span></label>
       <input type="date" id="recommendEndDate" />
     </div>
     <div style="display:flex; flex-direction:column;">
-      <label for="recommendCount">Max results:</label>
+      <label for="recommendCount"><span class="lang-en">Max results:</span><span class="lang-he">מקסימום תוצאות:</span></label>
       <select id="recommendCount">
         <option>5</option>
         <option selected>10</option>
@@ -413,7 +458,7 @@
       </select>
     </div>
     <div>
-      <button id="getRecommendations" class="primary-button">Get recommendations</button>
+      <button id="getRecommendations" class="primary-button"><span class="lang-en">Get recommendations</span><span class="lang-he">הצג המלצות</span></button>
     </div>
   </div>
   <div id="recommendationsResults" style="margin-top:1rem;"></div>
@@ -444,6 +489,8 @@
   let regionStats = [];  // aggregated per region
   let regionChart = null;
   let plantChart = null;
+  let lastRecommendations = null;
+  let lastSelectedSpecies = null;
 
   // Month constants
   const MONTHS_EN = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -558,6 +605,13 @@
       console.error('updateLegendLanguage failed', e);
     }
   }
+
+  // Small i18n map for UI strings used in the recommendations area
+  const STR = {
+    no_recs: { en: 'No recommendations found for the selected dates.', he: 'לא נמצאו המלצות לטווח התאריכים שנבחר.' },
+    expected_to_bloom: { en: 'Expected to bloom:', he: 'צפויים לפרוח:' },
+    species_suffix: { en: 'species', he: 'מינים' }
+  };
 
   // Helper: choose display value based on language, with fallback
   function pickBilingual(record, colEn, colHe) {
@@ -719,7 +773,14 @@
       buildRegionMap();
       updateTodayDisplay();
       updateLegendLanguage();
+      // re-render visible UI pieces
       renderAll();
+      // re-render cached recommendations in current language if available
+      if (typeof lastRecommendations !== 'undefined' && lastRecommendations) {
+        renderRecommendations(lastRecommendations);
+      }
+      // re-render last selected plant chart (to update title language)
+      if (lastSelectedSpecies) renderPlantChart(lastSelectedSpecies);
     };
 
     const dateDisplay = document.getElementById('dateDisplayMode');
@@ -888,6 +949,7 @@
 
       // On click: show per-plant probability curve
       row.addEventListener("click", () => {
+        lastSelectedSpecies = s;
         renderPlantChart(s);
       });
 
@@ -1283,7 +1345,7 @@
     function renderRecommendations(recommendations) {
       const container = document.getElementById('recommendationsResults');
       container.innerHTML = '';
-      if (!recommendations || recommendations.length === 0) { container.innerHTML = '<div class="no-recommendations">No recommendations found for the selected dates.</div>'; return; }
+  if (!recommendations || recommendations.length === 0) { container.innerHTML = '<div class="no-recommendations">' + (STR.no_recs[languageSelect.value] || STR.no_recs.en) + '</div>'; return; }
       const maxShow = parseInt(document.getElementById('recommendCount').value || '10',10);
       recommendations.slice(0, maxShow).forEach((rec, idx) => {
         const card = document.createElement('div');
@@ -1292,20 +1354,22 @@
         const left = document.createElement('div'); left.style.display='flex'; left.style.alignItems='start';
         const rankBadge = document.createElement('div'); rankBadge.className = 'recommendation-rank rank-' + Math.min(3, idx+1); rankBadge.textContent = idx+1;
         const loc = document.createElement('div'); loc.className='recommendation-location';
-    const h3 = document.createElement('h3'); h3.textContent = pickBilingualFromObj(rec, 'regionEn', 'regionHe');
-    const site = document.createElement('div'); site.className='recommendation-site'; site.textContent = pickBilingualFromObj(rec, 'siteEn', 'siteHe') || '';
+  const h3 = document.createElement('h3'); h3.textContent = pickBilingualFromObj(rec, 'regionEn', 'regionHe');
+  const site = document.createElement('div'); site.className='recommendation-site'; site.textContent = pickBilingualFromObj(rec, 'siteEn', 'siteHe') || '';
         loc.appendChild(h3); loc.appendChild(site);
         left.appendChild(rankBadge); left.appendChild(loc);
         const scoreBadge = document.createElement('div'); scoreBadge.className='recommendation-score-badge'; scoreBadge.textContent = rec.totalScore;
         header.appendChild(left); header.appendChild(scoreBadge);
         const stats = document.createElement('div'); stats.className='recommendation-stats';
-        const speciesCountStat = document.createElement('div'); speciesCountStat.className='stat-item'; speciesCountStat.innerHTML = `<span class="stat-icon">🌺</span><span>${rec.speciesCount} species</span>`;
+  const speciesCountStat = document.createElement('div'); speciesCountStat.className='stat-item';
+  const speciesLabel = (STR.species_suffix[languageSelect.value] || STR.species_suffix.en);
+  speciesCountStat.innerHTML = `<span class="stat-icon">🌺</span><span>${rec.speciesCount} ${speciesLabel}</span>`;
         stats.appendChild(speciesCountStat);
         const speciesSection = document.createElement('div'); speciesSection.className='species-preview';
-        const speciesTitle = document.createElement('h4'); speciesTitle.textContent = 'Expected to bloom:'; speciesSection.appendChild(speciesTitle);
+  const speciesTitle = document.createElement('h4'); speciesTitle.textContent = (STR.expected_to_bloom[languageSelect.value] || STR.expected_to_bloom.en); speciesSection.appendChild(speciesTitle);
         const speciesTags = document.createElement('div'); speciesTags.className='species-tags';
-    rec.bloomingSpecies.slice(0,15).forEach(sp => { const t=document.createElement('span'); t.className='species-tag'+(sp.isRare? ' rare':'' ); t.textContent = pickBilingualFromObj(sp, 'plantEn','plantHe'); speciesTags.appendChild(t); });
-        if (rec.bloomingSpecies.length>15) { const more = document.createElement('span'); more.className='species-tag-more'; more.textContent = '...'; speciesTags.appendChild(more); }
+  rec.bloomingSpecies.slice(0,15).forEach(sp => { const t=document.createElement('span'); t.className='species-tag'+(sp.isRare? ' rare':'' ); t.textContent = pickBilingualFromObj(sp, 'plantEn','plantHe'); speciesTags.appendChild(t); });
+  if (rec.bloomingSpecies.length>15) { const more = document.createElement('span'); more.className='species-tag-more'; more.textContent = '...'; speciesTags.appendChild(more); }
         speciesSection.appendChild(speciesTags);
         card.appendChild(header); card.appendChild(stats); card.appendChild(speciesSection);
         container.appendChild(card);
@@ -1321,6 +1385,7 @@
       if (endDateInput) endJulian = dateToJulian(new Date(endDateInput)); else endJulian = startJulian;
       if (endJulian < startJulian) { alert('End date must be after start date'); return; }
       const recs = getRecommendationsForDateRange(startJulian, endJulian);
+      lastRecommendations = recs;
       renderRecommendations(recs);
     });
 
