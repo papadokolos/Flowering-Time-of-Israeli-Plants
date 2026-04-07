@@ -165,6 +165,29 @@
     .legend-color.orange { background: #ff9800; }
     .legend-color.red { background: #d32f2f; }
 
+    /* Multi-period / winter styling */
+    .bar.secondary {
+      opacity: 0.55;
+      height: 10px;
+      top: 2px;
+    }
+
+    .bar.winter-wrap {
+      background: repeating-linear-gradient(45deg, #66bb6a 0 6px, #4caf50 6px 12px);
+    }
+
+    .multi-period-badge {
+      display: inline-block;
+      margin-left: 6px;
+      background: #9c27b0;
+      color: white;
+      font-size: 0.65rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 700;
+      vertical-align: middle;
+    }
+
     canvas {
       max-width: 100%;
     }
@@ -202,6 +225,15 @@
     <label for="regionFilter">Region filter:</label><br>
     <select id="regionFilter">
       <option value="ALL">All regions</option>
+    </select>
+  </div>
+
+  <div>
+    <label for="dateDisplayMode">Date format:</label><br>
+    <select id="dateDisplayMode">
+      <option value="month">Month & day</option>
+      <option value="julian">Julian day</option>
+      <option value="both">Both</option>
     </select>
   </div>
 
@@ -271,6 +303,33 @@
   </div>
 </div>
 
+<!-- Recommendations panel (Feature 3) -->
+<section class="panel" style="margin-top:1rem;">
+  <h2>🌸 Travel Recommendations</h2>
+  <div style="display:flex; gap:0.6rem; align-items:flex-end; flex-wrap:wrap;">
+    <div style="display:flex; flex-direction:column;">
+      <label for="recommendStartDate">Start date:</label>
+      <input type="date" id="recommendStartDate" />
+    </div>
+    <div style="display:flex; flex-direction:column;">
+      <label for="recommendEndDate">End date:</label>
+      <input type="date" id="recommendEndDate" />
+    </div>
+    <div style="display:flex; flex-direction:column;">
+      <label for="recommendCount">Max results:</label>
+      <select id="recommendCount">
+        <option>5</option>
+        <option selected>10</option>
+        <option>20</option>
+      </select>
+    </div>
+    <div>
+      <button id="getRecommendations" class="primary-button">Get recommendations</button>
+    </div>
+  </div>
+  <div id="recommendationsResults" style="margin-top:1rem;"></div>
+</section>
+
 <footer>
   Data source: “Flowering Time of Israeli Plants database” (wildflowers.co.il, 2009–2024).
 </footer>
@@ -297,6 +356,76 @@
   let regionChart = null;
   let plantChart = null;
 
+  // Month constants
+  const MONTHS_EN = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const MONTHS_FULL_EN = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const MONTHS_HE = ["ינו","פבר","מרץ","אפר","מאי","יונ","יול","אוג","ספט","אוק","נוב","דצמ"];
+  const MONTHS_FULL_HE = ["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
+
+  function julianToMonthDay(julian) {
+    const year = new Date().getFullYear();
+    const d = new Date(year, 0, 1);
+    d.setDate(julian);
+    return { month: d.getMonth(), day: d.getDate() };
+  }
+
+  function formatJulianAsDate(julian, lang = 'en', format = 'short') {
+    if (!julian || typeof julian !== 'number') return '';
+    const { month, day } = julianToMonthDay(julian);
+    const months = (format === 'short') ? (lang === 'he' ? MONTHS_HE : MONTHS_EN) : (lang === 'he' ? MONTHS_FULL_HE : MONTHS_FULL_EN);
+    if (lang === 'he') return `${day} ${months[month]}`;
+    return `${months[month]} ${day}`;
+  }
+
+  // ===== Blooming period detection =====
+  function detectBloomingPeriods(observations, gapThreshold = 30) {
+    const obs = (observations || []).filter(d => typeof d === 'number' && d >= 1 && d <= 365).slice();
+    if (!obs.length) return [];
+    obs.sort((a,b)=>a-b);
+    const periods = [];
+    let current = { minDay: obs[0], maxDay: obs[0], observations: [obs[0]] };
+    for (let i=1;i<obs.length;i++){
+      const gap = obs[i] - obs[i-1];
+      if (gap > gapThreshold) {
+        periods.push({ minDay: current.minDay, maxDay: current.maxDay, count: current.observations.length, observations: current.observations.slice() });
+        current = { minDay: obs[i], maxDay: obs[i], observations: [obs[i]] };
+      } else {
+        current.maxDay = obs[i];
+        current.observations.push(obs[i]);
+      }
+    }
+    periods.push({ minDay: current.minDay, maxDay: current.maxDay, count: current.observations.length, observations: current.observations.slice() });
+
+    // handle year wrapping (winter bloomers)
+    if (periods.length > 1) {
+      const first = periods[0];
+      const last = periods[periods.length-1];
+      const WRAP_THRESHOLD = 45;
+      if (first.minDay <= WRAP_THRESHOLD && last.maxDay >= (365 - WRAP_THRESHOLD)) {
+        const crossYearGap = (365 - last.maxDay) + first.minDay;
+        if (crossYearGap <= gapThreshold) {
+          // merge
+          const merged = {
+            minDay: last.minDay,
+            maxDay: first.maxDay + 365,
+            count: last.count + first.count,
+            observations: last.observations.concat(first.observations.map(d=>d+365)),
+            wrapsYear: true
+          };
+          const middle = periods.slice(1, -1);
+          periods.length = 0;
+          periods.push(merged, ...middle);
+        }
+      }
+    }
+
+    // compute peak and isPrimary
+    let maxCount = 0;
+    periods.forEach(p => { p.peakDay = Math.round(((p.minDay + p.maxDay) / 2) % 365); if (p.peakDay === 0) p.peakDay = 365; maxCount = Math.max(maxCount, p.count); });
+    periods.forEach(p => p.isPrimary = (p.count === maxCount));
+    return periods;
+  }
+
   function getTodayJulianDay() {
     const today = new Date();
     const start = new Date(today.getFullYear(), 0, 0);
@@ -306,10 +435,21 @@
   }
 
   const todayJulian = getTodayJulianDay();
-  document.getElementById("todayInfo").textContent =
-    todayJulian + " (" + new Date().toLocaleDateString() + ")";
-
+  function updateTodayDisplay(){
+    const mode = document.getElementById('dateDisplayMode') ? document.getElementById('dateDisplayMode').value : 'month';
+    const lang = languageSelect.value;
+    const el = document.getElementById('todayInfo');
+    if (mode === 'julian') {
+      el.textContent = todayJulian + ' (' + new Date().toLocaleDateString() + ')';
+    } else if (mode === 'both') {
+      el.innerHTML = formatJulianAsDate(todayJulian, lang, 'short') + '<br><small>Day ' + todayJulian + '</small>';
+    } else {
+      el.innerHTML = formatJulianAsDate(todayJulian, lang, 'short') + ' <small>(Day ' + todayJulian + ')</small>';
+    }
+  }
+  
   const languageSelect = document.getElementById("languageSelect");
+  updateTodayDisplay();
 
   // Helper: choose display value based on language, with fallback
   function pickBilingual(record, colEn, colHe) {
@@ -395,7 +535,7 @@
   function computeAggregations() {
     const speciesMap = new Map();
     const regionMap = new Map();
-
+    // group raw records by plant-region and collect observation days
     rawRecords.forEach(r => {
       const plantEn  = (r[COL_PLANT_EN] && String(r[COL_PLANT_EN]).trim()) || "";
       const plantHe  = (r[COL_PLANT_HE] && String(r[COL_PLANT_HE]).trim()) || "";
@@ -408,20 +548,10 @@
       const regionKey = regionEn + "||" + regionHe;
       const key = plantKey + "||" + regionKey;
 
-      // Species stats
       if (!speciesMap.has(key)) {
-        speciesMap.set(key, {
-          plantEn, plantHe,
-          regionEn, regionHe,
-          minDay: day,
-          maxDay: day,
-          count: 1
-        });
+        speciesMap.set(key, { plantEn, plantHe, regionEn, regionHe, observations: [day] });
       } else {
-        const obj = speciesMap.get(key);
-        obj.minDay = Math.min(obj.minDay, day);
-        obj.maxDay = Math.max(obj.maxDay, day);
-        obj.count++;
+        speciesMap.get(key).observations.push(day);
       }
 
       // Region stats (for phenology curve)
@@ -439,18 +569,20 @@
       }
     });
 
+    // convert speciesMap to speciesStats with detected periods
     speciesStats = Array.from(speciesMap.values()).map(s => {
-      const windowLength = s.maxDay - s.minDay + 1;
-      const rarityScore = windowLength; // smaller = rarer blooming window
-      const peakDay = Math.round((s.minDay + s.maxDay) / 2);
-      return { ...s, windowLength, rarityScore, peakDay };
+      const periods = detectBloomingPeriods(s.observations || []);
+      const totalWindowDays = periods.reduce((sum,p)=> sum + (p.wrapsYear ? (p.maxDay - p.minDay + 1) : (p.maxDay - p.minDay + 1)), 0);
+      const totalCount = (s.observations || []).length;
+      const primary = periods.find(p=>p.isPrimary) || (periods[0] || { peakDay: null });
+      return { ...s, bloomingPeriods: periods, totalWindowDays, totalCount, peakDay: primary.peakDay };
     });
 
     regionStats = Array.from(regionMap.values());
 
     document.getElementById("summaryText").textContent =
       "Loaded " + rawRecords.length + " observations, aggregated into " +
-      speciesStats.length + " plant–region flowering periods across " +
+  speciesStats.length + " plant–region combinations across " +
       regionStats.length + " regions.";
   }
 
@@ -477,8 +609,12 @@
     languageSelect.onchange = () => {
       populateRegionFilter();
       buildRegionMap();
+      updateTodayDisplay();
       renderAll();
     };
+
+    const dateDisplay = document.getElementById('dateDisplayMode');
+    if (dateDisplay) dateDisplay.onchange = () => { updateTodayDisplay(); renderAll(); };
   }
 
   function buildRegionMap() {
@@ -543,7 +679,11 @@
       if (searchTerm && !displayName.includes(searchTerm)) return false;
 
       if (showMode === "bloomingNow") {
-        return todayJulian >= s.minDay && todayJulian <= s.maxDay;
+        // check any blooming period covers today
+        return (s.bloomingPeriods || []).some(p=> {
+          if (p.wrapsYear) return (todayJulian >= p.minDay) || (todayJulian <= (p.maxDay - 365));
+          return todayJulian >= p.minDay && todayJulian <= p.maxDay;
+        });
       }
       return true;
     });
@@ -554,12 +694,11 @@
         const bn = pickBilingualFromObj(b, "plantEn", "plantHe");
         return an.localeCompare(bn, "he");
       } else if (sortMode === "peak") {
-        return a.peakDay - b.peakDay;
+        return (a.peakDay || 999) - (b.peakDay || 999);
       } else { // rarity
-        if (a.rarityScore === b.rarityScore) {
-          return a.count - b.count;
-        }
-        return a.rarityScore - b.rarityScore;
+        // sort by totalWindowDays (smaller = rarer). fallback to totalCount
+        if ((a.totalWindowDays || 9999) === (b.totalWindowDays || 9999)) return (a.totalCount || 0) - (b.totalCount || 0);
+        return (a.totalWindowDays || 9999) - (b.totalWindowDays || 9999);
       }
     });
 
@@ -583,6 +722,13 @@
       const nameEl = document.createElement("div");
       nameEl.className = "plant-name";
       nameEl.textContent = pickBilingualFromObj(s, "plantEn", "plantHe");
+      // add multi-period badge
+      if ((s.bloomingPeriods || []).length > 1) {
+        const badge = document.createElement('span');
+        badge.className = 'multi-period-badge';
+        badge.textContent = (s.bloomingPeriods || []).length + '×';
+        nameEl.appendChild(badge);
+      }
       nameEl.title = nameEl.textContent;
 
       const regionEl = document.createElement("div");
@@ -592,24 +738,21 @@
 
       const barWrapper = document.createElement("div");
       barWrapper.className = "bar-wrapper";
+      // render each blooming period as a bar
+      (s.bloomingPeriods || []).forEach((p, idx) => {
+        const minDay = p.minDay;
+        const maxDay = p.maxDay;
+        renderBar(barWrapper, minDay, maxDay, todayJulian, p, idx, p.isPrimary);
+      });
 
-      const bar = document.createElement("div");
-      bar.className = "bar";
-      const startPercent = (s.minDay / 365) * 100;
-      const endPercent = (s.maxDay / 365) * 100;
-      bar.style.left = startPercent + "%";
-      bar.style.width = Math.max(1, endPercent - startPercent) + "%";
-
-      if (todayJulian >= s.minDay && todayJulian <= s.maxDay) {
-        bar.classList.add("current");
-      }
-
+      // today line
       const todayLine = document.createElement("div");
       todayLine.className = "today-line";
       todayLine.style.left = (todayJulian / 365) * 100 + "%";
-
-      barWrapper.appendChild(bar);
       barWrapper.appendChild(todayLine);
+
+      // add month markers to first visible row only
+      if (container.children.length === 0) addMonthMarkersToFirstRow(barWrapper);
 
       row.appendChild(nameEl);
       row.appendChild(regionEl);
@@ -660,7 +803,9 @@
 
     const ctx = document.getElementById("regionChart").getContext("2d");
     if (regionChart) regionChart.destroy();
-    regionChart = new Chart(ctx, {
+  const displayMode = document.getElementById('dateDisplayMode') ? document.getElementById('dateDisplayMode').value : 'month';
+  const xTitle = displayMode === 'julian' ? 'Julian day' : (displayMode === 'both' ? 'Month / Julian day' : 'Month');
+  regionChart = new Chart(ctx, {
       type: "line",
       data: {
         labels,
@@ -677,7 +822,7 @@
         responsive: true,
         scales: {
           x: {
-            title: { display: true, text: "Julian day" },
+      title: { display: true, text: xTitle },
             ticks: { maxTicksLimit: 12 }
           },
           y: {
@@ -775,6 +920,203 @@
       }
     });
   }
+
+    // Render a single period bar (supports wrap by using maxDay>365)
+    function renderBar(wrapper, minDay, maxDay, todayJulian, period, periodIndex, isPrimary) {
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      if (!isPrimary) bar.classList.add('secondary');
+      if (period.wrapsYear) bar.classList.add('winter-wrap');
+
+    // handle wrapped periods: maxDay may be >365
+    const start = minDay;
+    const end = maxDay > 365 ? (maxDay - 365) : maxDay;
+    const startPercent = (start / 365) * 100;
+    const endPercent = (end / 365) * 100;
+    const width = maxDay > 365 ? (100 - startPercent) + endPercent : Math.max(1, endPercent - startPercent);
+      bar.style.left = startPercent + '%';
+      bar.style.width = width + '%';
+
+      // determine current bloom
+      let isCurrentlyBlooming = false;
+      if (period.wrapsYear) {
+        isCurrentlyBlooming = (todayJulian >= period.minDay) || (todayJulian <= (period.maxDay - 365));
+      } else {
+        isCurrentlyBlooming = todayJulian >= period.minDay && todayJulian <= period.maxDay;
+      }
+      if (isCurrentlyBlooming) bar.classList.add('current');
+
+      // tooltip
+      const lang = languageSelect.value;
+      bar.title = formatPeriodTooltip(period, lang);
+
+      wrapper.appendChild(bar);
+    }
+
+    function formatPeriodTooltip(period, lang) {
+      const start = period.minDay;
+      const end = period.maxDay > 365 ? (period.maxDay - 365) : period.maxDay;
+      if (lang === 'he') return `${formatJulianAsDate(start,'he','short')} — ${formatJulianAsDate(end,'he','short')}`;
+      return `${formatJulianAsDate(start,'en','short')} — ${formatJulianAsDate(end,'en','short')}`;
+    }
+
+    function getMonthBoundaries() {
+      const year = new Date().getFullYear();
+      const boundaries = [];
+      for (let m=0;m<12;m++) {
+        const d = new Date(year, m, 1);
+        const startJulian = Math.floor((d - new Date(year,0,0)) / (1000*60*60*24));
+        boundaries.push(startJulian);
+      }
+      return boundaries;
+    }
+
+    function addMonthMarkersToFirstRow(barWrapper) {
+      const monthBoundaries = getMonthBoundaries();
+      const lang = languageSelect.value;
+      monthBoundaries.forEach((b, idx) => {
+        const marker = document.createElement('div');
+        marker.className = 'month-separator';
+        marker.style.left = (b / 365) * 100 + '%';
+        const label = document.createElement('div');
+        label.className = 'month-label-inline';
+        label.style.left = (b / 365) * 100 + '%';
+        label.textContent = lang === 'he' ? MONTHS_HE[idx] : MONTHS_EN[idx];
+        barWrapper.appendChild(marker);
+        barWrapper.appendChild(label);
+      });
+    }
+
+    // ===== Recommendations engine (basic) =====
+    function dateToJulian(date) {
+      const yearStart = new Date(date.getFullYear(), 0, 0);
+      const diff = date - yearStart;
+      const oneDay = 1000 * 60 * 60 * 24;
+      return Math.floor(diff / oneDay);
+    }
+
+    function groupByLocation() {
+      const map = new Map();
+      rawRecords.forEach(r => {
+        const regionEn = (r[COL_REGION_EN] && String(r[COL_REGION_EN]).trim()) || 'Unknown';
+        const regionHe = (r[COL_REGION_HE] && String(r[COL_REGION_HE]).trim()) || regionEn;
+        const siteEn = (r[COL_SITE_EN] && String(r[COL_SITE_EN]).trim()) || '';
+        const siteHe = (r[COL_SITE_HE] && String(r[COL_SITE_HE]).trim()) || siteEn;
+        const plantEn = (r[COL_PLANT_EN] && String(r[COL_PLANT_EN]).trim()) || '';
+        const plantHe = (r[COL_PLANT_HE] && String(r[COL_PLANT_HE]).trim()) || '';
+        const day = Number(r[COL_JULIAN]);
+        const key = (regionEn + '||' + regionHe + '||' + siteEn + '||' + siteHe);
+        if (!map.has(key)) map.set(key, { regionEn, regionHe, siteEn, siteHe, plants: new Map() });
+        const loc = map.get(key);
+        const plantKey = plantEn + '||' + plantHe;
+        if (!loc.plants.has(plantKey)) loc.plants.set(plantKey, { plantEn, plantHe, observations: [] });
+        if (day >=1 && day <=365) loc.plants.get(plantKey).observations.push(day);
+      });
+      return map;
+    }
+
+    function periodOverlapsRange(period, startJulian, endJulian) {
+      if (period.wrapsYear) {
+        const lateYear = !(endJulian < period.minDay);
+        const earlyYear = !(startJulian > (period.maxDay - 365));
+        return lateYear || earlyYear;
+      }
+      return !(endJulian < period.minDay || startJulian > period.maxDay);
+    }
+
+    function calculateBloomProbabilityInRange(observations, startJulian, endJulian) {
+      if (!observations || observations.length === 0) return 0;
+      const inRange = observations.filter(d => {
+        if (startJulian <= endJulian) return d >= startJulian && d <= endJulian;
+        // wrap range
+        return d >= startJulian || d <= endJulian;
+      }).length;
+      return inRange / observations.length;
+    }
+
+    function scoreLocation(location, targetStart, targetEnd) {
+      let diversityScore = 0;
+      let rarityScore = 0;
+      let probabilityScore = 0;
+      const bloomingSpecies = [];
+      location.plants.forEach(p => {
+        const periods = detectBloomingPeriods(p.observations || []);
+        const anyOverlap = periods.some(per => periodOverlapsRange(per, targetStart, targetEnd));
+        if (!anyOverlap) return;
+        const prob = calculateBloomProbabilityInRange(p.observations || [], targetStart, targetEnd);
+        const isRare = periods.reduce((min, x) => Math.min(min, x.count || 999), 999) < 3;
+        probabilityScore += prob;
+        rarityScore += isRare ? 1 : 0;
+        diversityScore += 1;
+        bloomingSpecies.push({ plantEn: p.plantEn, plantHe: p.plantHe, probability: prob, isRare });
+      });
+      const diversityBonus = Math.log(diversityScore + 1) * 15;
+      const totalScore = Math.round((probabilityScore * 50) + (rarityScore * 12) + diversityBonus);
+      return { regionEn: location.regionEn, regionHe: location.regionHe, siteEn: location.siteEn, siteHe: location.siteHe, totalScore, speciesCount: diversityScore, bloomingSpecies, totalScoreRaw: totalScore };
+    }
+
+    function getRecommendationsForDateRange(startJulian, endJulian) {
+      const locations = groupByLocation();
+      const scored = [];
+      locations.forEach(loc => {
+        const s = scoreLocation(loc, startJulian, endJulian);
+        if (s && s.speciesCount > 0) scored.push(s);
+      });
+      scored.sort((a,b)=>b.totalScore - a.totalScore);
+      return scored;
+    }
+
+    function renderRecommendations(recommendations) {
+      const container = document.getElementById('recommendationsResults');
+      container.innerHTML = '';
+      if (!recommendations || recommendations.length === 0) { container.innerHTML = '<div class="no-recommendations">No recommendations found for the selected dates.</div>'; return; }
+      const maxShow = parseInt(document.getElementById('recommendCount').value || '10',10);
+      recommendations.slice(0, maxShow).forEach((rec, idx) => {
+        const card = document.createElement('div');
+        card.className = 'recommendation-card rank-' + Math.min(3, idx+1);
+        const header = document.createElement('div'); header.className = 'recommendation-header';
+        const left = document.createElement('div'); left.style.display='flex'; left.style.alignItems='start';
+        const rankBadge = document.createElement('div'); rankBadge.className = 'recommendation-rank rank-' + Math.min(3, idx+1); rankBadge.textContent = idx+1;
+        const loc = document.createElement('div'); loc.className='recommendation-location';
+    const h3 = document.createElement('h3'); h3.textContent = pickBilingualFromObj(rec, 'regionEn', 'regionHe');
+    const site = document.createElement('div'); site.className='recommendation-site'; site.textContent = pickBilingualFromObj(rec, 'siteEn', 'siteHe') || '';
+        loc.appendChild(h3); loc.appendChild(site);
+        left.appendChild(rankBadge); left.appendChild(loc);
+        const scoreBadge = document.createElement('div'); scoreBadge.className='recommendation-score-badge'; scoreBadge.textContent = rec.totalScore;
+        header.appendChild(left); header.appendChild(scoreBadge);
+        const stats = document.createElement('div'); stats.className='recommendation-stats';
+        const speciesCountStat = document.createElement('div'); speciesCountStat.className='stat-item'; speciesCountStat.innerHTML = `<span class="stat-icon">🌺</span><span>${rec.speciesCount} species</span>`;
+        stats.appendChild(speciesCountStat);
+        const speciesSection = document.createElement('div'); speciesSection.className='species-preview';
+        const speciesTitle = document.createElement('h4'); speciesTitle.textContent = 'Expected to bloom:'; speciesSection.appendChild(speciesTitle);
+        const speciesTags = document.createElement('div'); speciesTags.className='species-tags';
+    rec.bloomingSpecies.slice(0,15).forEach(sp => { const t=document.createElement('span'); t.className='species-tag'+(sp.isRare? ' rare':'' ); t.textContent = pickBilingualFromObj(sp, 'plantEn','plantHe'); speciesTags.appendChild(t); });
+        if (rec.bloomingSpecies.length>15) { const more = document.createElement('span'); more.className='species-tag-more'; more.textContent = '...'; speciesTags.appendChild(more); }
+        speciesSection.appendChild(speciesTags);
+        card.appendChild(header); card.appendChild(stats); card.appendChild(speciesSection);
+        container.appendChild(card);
+      });
+    }
+
+    // wire recommendation button
+    document.getElementById('getRecommendations').addEventListener('click', ()=>{
+      const startDateInput = document.getElementById('recommendStartDate').value;
+      const endDateInput = document.getElementById('recommendEndDate').value;
+      let startJulian, endJulian;
+      if (startDateInput) startJulian = dateToJulian(new Date(startDateInput)); else startJulian = todayJulian;
+      if (endDateInput) endJulian = dateToJulian(new Date(endDateInput)); else endJulian = startJulian;
+      if (endJulian < startJulian) { alert('End date must be after start date'); return; }
+      const recs = getRecommendationsForDateRange(startJulian, endJulian);
+      renderRecommendations(recs);
+    });
+
+    // init recommend date inputs to today
+    window.addEventListener('load', ()=>{
+      const today = new Date();
+      const dateStr = today.toISOString().split('T')[0];
+      const sd = document.getElementById('recommendStartDate'); if (sd) sd.value = dateStr;
+      const ed = document.getElementById('recommendEndDate'); if (ed) ed.value = dateStr;
+    });
 </script>
 </body>
 </html>
