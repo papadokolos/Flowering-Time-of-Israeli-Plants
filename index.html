@@ -253,6 +253,17 @@
     .bar.winter-wrap {
       background: repeating-linear-gradient(45deg, #66bb6a 0 6px, #4caf50 6px 12px);
     }
+    /* If a winter (wrap) bar is currently in bloom, prefer the "current" color (orange)
+       — winter gradient is otherwise declared after .bar.current and would win. */
+    .bar.winter-wrap.current {
+      /* use an orange striped gradient (matching the winter green stripes style) */
+      background: repeating-linear-gradient(45deg, #ffb74d 0 6px, #ff9800 6px 12px);
+      border-radius: 7px;
+      opacity: 0.95;
+    }
+
+    /* legend swatch for winter periods that are currently in bloom (orange stripes) */
+    .legend-color.winter-current { background: repeating-linear-gradient(45deg, #ffb74d 0 6px, #ff9800 6px 12px); border-radius: 3px; }
 
     .multi-period-badge {
       display: inline-block;
@@ -371,7 +382,8 @@
       <div class="legend-item"><span class="legend-color green" aria-hidden="true"></span> <span class="lang-en">Primary (expected) flowering period</span><span class="lang-he">תקופת פריחה צפויה (עיקרית)</span></div>
       <div class="legend-item"><span class="legend-color secondary" aria-hidden="true"></span> <span class="lang-en">Secondary / additional flowering period</span><span class="lang-he">תקופה משנית / נוספת</span></div>
       <div class="legend-item"><span class="legend-color winter" aria-hidden="true"></span> <span class="lang-en">Winter period (spans year boundary)</span><span class="lang-he">תקופת חורף (חוצה את סוף/תחילת השנה)</span></div>
-      <div class="legend-item"><span class="legend-color orange" aria-hidden="true"></span> <span class="lang-en">Currently in bloom (based on today's date)</span><span class="lang-he">כעת בפריחה (בהתאם לתאריך של היום)</span></div>
+  <div class="legend-item"><span class="legend-color orange" aria-hidden="true"></span> <span class="lang-en">Currently in bloom (based on today's date)</span><span class="lang-he">כעת בפריחה (בהתאם לתאריך של היום)</span></div>
+  <div class="legend-item"><span class="legend-color winter-current" aria-hidden="true"></span> <span class="lang-en">Winter period currently in bloom (orange striped)</span><span class="lang-he">תקופת חורף — כעת בפריחה (פסים כתומים)</span></div>
       <div class="legend-item"><span class="legend-color red" aria-hidden="true"></span> <span class="lang-en">Today (Julian day marker)</span><span class="lang-he">היום (יום יוליאני)</span></div>
       <div class="legend-item"><span class="legend-badge" aria-hidden="true">2×</span> <span class="lang-en">Multi-period badge: number of distinct blooming periods</span><span class="lang-he">סמלית ריבוי תקופות: מספר תקופות פריחה</span></div>
       <div class="legend-item"><span class="legend-month-marker" aria-hidden="true"></span> <span class="lang-en">Month markers along the timeline (toggle date format above)</span><span class="lang-he">סימוני חודשים לאורך ציר הזמן (שנה תצוגת תאריכים למעלה)</span></div>
