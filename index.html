@@ -86,7 +86,6 @@
   overflow-y: auto;
   margin-top: 0.5rem;
   position: relative; /* allow absolute-positioned month overlay */
-  padding-top: 20px;   /* reserve space for the month overlay at the top */
     }
     .timeline-row {
       display: flex;
@@ -209,6 +208,7 @@
       pointer-events: none;
       z-index: 300; /* above lines and bars */
       display: block;
+      padding-bottom: 5px;
     }
     /* absolute lines that overlay the bar area and scroll with content */
     .month-lines {
